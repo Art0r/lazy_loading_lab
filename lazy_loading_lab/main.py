@@ -1,8 +1,8 @@
 from typing import Annotated
 from fastapi import Depends, FastAPI
 import uvicorn
-from lazy_loading_lab.services.base import DefaultService
-from lazy_loading_lab.services.lazy import lazy_view_factory
+from lazy_loading_lab.core.base import DefaultService
+from lazy_loading_lab.core.lazy import lazy_view_factory
 
 app = FastAPI()
 
