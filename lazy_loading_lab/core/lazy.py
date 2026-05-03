@@ -1,64 +1,61 @@
-from dataclasses import dataclass
-from typing import Callable, Literal
+from functools import wraps
+from typing import Any, Callable, Dict, Type
 from fastapi import FastAPI
 import importlib
 import pathlib
-
-
-@dataclass
-class Route:
-    name: str
-    method: Literal["GET"]
-    path: str
-    func: Callable
-
-
-routes = [
-    Route(name="h1", method="GET", func=lambda: "Hello World - 1", path="/h1"),
-    Route(name="h2", method="GET", func=lambda: "Hello World - 2", path="/h2"),
-    Route(name="h3", method="GET", func=lambda: "Hello World - 3", path="/h3"),
-]
-
+import inspect
 
 loaded_view_cache = {}
 
 
-def should_ignore_file_or_dir(path: pathlib.Path) -> bool:
-    name = path.name
-    return name.__contains__("__") or name.startswith("_")
+def should_ignore_file_or_dir(name: str) -> bool:
+    return (
+        name.__contains__("__")
+        or name.startswith("_")
+        or name.__contains__("Request")
+        or name == "dependencies"
+    )
 
 
-def lazy_view_entrypoint(name: str):
+def lazy_view_entrypoint(func: Callable, url: str):
 
-    def _lazy_view_entrypoint():
-        route = list(filter(lambda x: x.name == name, routes))[0]
-
-        is_view_loaded = loaded_view_cache.get(name) is not None
-        if not is_view_loaded:
-            loaded_view_cache[name] = route
-            route = loaded_view_cache[name]
-            print(f"Loaded {name}")
-
-        return route.func()
+    @wraps(func)
+    async def _lazy_view_entrypoint(**kwargs):
+        return await func(**kwargs)
 
     return _lazy_view_entrypoint
 
 
 def lazy_view_factory(app: FastAPI) -> FastAPI:
-
-    services = pathlib.Path("lazy_loading_lab/services")
+    services_path = "lazy_loading_lab/services"
+    services = pathlib.Path(services_path)
 
     for service in services.iterdir():
-        if should_ignore_file_or_dir(service):
+        if should_ignore_file_or_dir(service.name):
             continue
 
         service_name = service.name.replace(".py", "")
-
-        app.add_api_route(
-            path=f"/{service_name}",
-            methods=["GET", "POST"],
-            status_code=200,
-            endpoint=lazy_view_entrypoint(service_name),
+        service_module = importlib.import_module(
+            f"{services_path.replace('/', '.')}.{service_name}"
         )
+
+        routes_names = list(
+            filter(
+                lambda x: not should_ignore_file_or_dir(x),
+                [route for route in dir(service_module)],
+            )
+        )
+
+        for name in routes_names:
+            url = f"/{service_name}/{name}"
+            app.add_api_route(
+                path=url,
+                methods=["GET", "POST"],
+                status_code=200,
+                endpoint=lazy_view_entrypoint(
+                    func=getattr(service_module, name),
+                    url=url
+                ),
+            )
 
     return app

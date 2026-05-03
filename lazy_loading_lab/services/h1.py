@@ -1,10 +1,10 @@
 from fastapi import Request
+from starlette.datastructures import URL
 
-dependencies = [
-    Request,
-]
+dependencies = {
+    "request": Request,
+}
 
 
-def index(*args) -> str:
-    request: Request = args[0]
+async def index(request: Request) -> str:
     return request.url.path
